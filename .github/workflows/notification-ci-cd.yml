@@ -79,8 +79,13 @@ jobs:
           echo "$EC2_SSH_KEY" > ssh_key.pem
           chmod 600 ssh_key.pem
 
-          # Create deployment script
-          cat > deploy.sh << 'EOL'
+          # Define the variables directly in the deployment script to avoid variable substitution issues
+          REGISTRY=$ECR_REGISTRY
+          REPO=$ECR_REPOSITORY
+          TAG=$IMAGE_TAG
+
+          # Create deployment script that properly handles variables
+          cat > deploy.sh << EOF
           #!/bin/bash
 
           # Stop and remove the old container if it exists
@@ -88,16 +93,22 @@ jobs:
           docker rm notification-service || true
 
           # Pull the new image
-          docker pull ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
+          docker pull ${REGISTRY}/${REPO}:${TAG}
+
+          # Ensure environment file exists
+          if [ ! -f /home/$EC2_USERNAME/notification-service.env ]; then
+            echo "Creating empty environment file"
+            touch /home/$EC2_USERNAME/notification-service.env
+          fi
 
           # Run the new container
-          docker run -d \
-            --name notification-service \
-            -p 8002:8002 \
-            --restart always \
-            --env-file /home/${EC2_USERNAME}/notification-service.env \
-            ${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}
-          EOL
+          docker run -d \\
+            --name notification-service \\
+            -p 8002:8002 \\
+            --restart always \\
+            --env-file /home/$EC2_USERNAME/notification-service.env \\
+            ${REGISTRY}/${REPO}:${TAG}
+          EOF
 
           # Copy the deployment script to the EC2 instance
           scp -i ssh_key.pem -o StrictHostKeyChecking=no deploy.sh ${EC2_USERNAME}@${EC2_HOST}:/home/${EC2_USERNAME}/
